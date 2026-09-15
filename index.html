@@ -218,6 +218,7 @@
     <div class="row2" style="margin-top:8px"><label><input type="checkbox" id="show-ob" checked>OB・紹介者（名簿外）を出す</label></div>
     <div class="row2"><label><input type="checkbox" id="hide-orphan">つながりの無い人を隠す</label></div>
     <div class="row2"><label><input type="checkbox" id="labels-all">名前を常に出す</label></div>
+    <div class="row2"><label><input type="checkbox" id="cluster" checked>同じ色の人を近くに寄せる</label></div>
   </div>
   <div class="sec">
     <h2>入会年でたどる <small id="tl-hint">再生すると年ごとに人が増える</small></h2>
@@ -227,7 +228,7 @@
     <h2>ちらばり方</h2>
     <div class="range"><span>反発</span><input id="f-repel" type="range" min="40" max="600" step="10" value="240"><span class="v num" id="f-repel-v">240</span></div>
     <div class="range"><span>線の長さ</span><input id="f-dist" type="range" min="30" max="200" step="5" value="70"><span class="v num" id="f-dist-v">70</span></div>
-    <div class="range"><span>中心へ</span><input id="f-center" type="range" min="0" max="20" step="1" value="5"><span class="v num" id="f-center-v">5</span></div>
+    <div class="range"><span>中心へ</span><input id="f-center" type="range" min="0" max="20" step="1" value="8"><span class="v num" id="f-center-v">8</span></div>
   </div>
   <div class="sec" id="sec-admin" style="display:none">
     <h2>役員</h2>
@@ -303,10 +304,10 @@
     data: null, nodes: [], links: [], byName: {},
     mode: 'global', focus: '', depth: 1,
     colorBy: 'committee', edgeOn: { intro: true, cl: true, hobby: true, committee: false, industry: false },
-    showOB: true, hideOrphan: false, labelsAll: false, hiddenCats: {},
+    showOB: true, hideOrphan: false, labelsAll: false, cluster: true, hiddenCats: {},
     selected: '', hover: '', pathFrom: '', pathTo: '', pathNodes: {}, pathLinks: {},
     tl: { years: [], idx: -1, timer: null },
-    f: { repel: 240, dist: 70, center: 5 },
+    f: { repel: 240, dist: 70, center: 8 },
     k: 1
   };
 
@@ -489,10 +490,23 @@
   svg.call(zoom).on('dblclick.zoom', null);
   svg.on('click', function (e) { if (e.target === svg.node()) { select(''); } });
   function size() { var r = svg.node().getBoundingClientRect(); W = r.width; H = r.height; }
-  size(); window.addEventListener('resize', function () { size(); sim.force('center', d3.forceCenter(W / 2, H / 2).strength(S.f.center / 100)).alpha(.2).restart(); });
+  size(); window.addEventListener('resize', function () { size(); centerForces(); sim.alpha(.2).restart(); });
 
   var linkSel = gl.selectAll('line'), nodeSel = gn.selectAll('g');
   function R(n) { return n.ghost ? 6 : Math.min(22, 9 + n.size * 2.2); }
+  // 色分けの区分ごとに重心へ軽く寄せる（Obsidianでタグが束ねる役を、線を増やさずに力で担う）。OBは寄せない
+  function forceCluster() {
+    var nodes = [];
+    function force(alpha) {
+      if (!S.cluster) return;
+      var c = {};
+      nodes.forEach(function (n) { if (n.ghost) return; var k = catOf(n); var g = c[k] || (c[k] = { x: 0, y: 0, n: 0 }); g.x += n.x; g.y += n.y; g.n++; });
+      nodes.forEach(function (n) { if (n.ghost) return; var g = c[catOf(n)]; if (!g || g.n < 2) return; n.vx += (g.x / g.n - n.x) * alpha * .14; n.vy += (g.y / g.n - n.y) * alpha * .14; });
+    }
+    force.initialize = function (ns) { nodes = ns; };
+    return force;
+  }
+  function centerForces() { sim.force('x', d3.forceX(W / 2).strength(S.f.center / 100)).force('y', d3.forceY(H / 2).strength(S.f.center / 100)); }
 
   function render() {
     buildColors();
@@ -521,9 +535,10 @@
     sim.nodes(v.nodes)
       .force('link', d3.forceLink(v.links).id(function (n) { return n.id; }).distance(function (l) { return S.f.dist + (l.type === 'committee' || l.type === 'industry' ? 30 : 0); }).strength(function (l) { return l.type === 'committee' || l.type === 'industry' ? .15 : .6; }))
       .force('charge', d3.forceManyBody().strength(-S.f.repel))
-      .force('center', d3.forceCenter(W / 2, H / 2).strength(S.f.center / 100))
+      .force('cluster', forceCluster())
       .force('collide', d3.forceCollide().radius(function (n) { return R(n) + 6; }))
       .on('tick', tick).alpha(.8).restart();
+    centerForces();
 
     $('st-m').textContent = S.nodes.filter(function (n) { return !n.ghost; }).length;
     $('st-g').textContent = S.nodes.filter(function (n) { return n.ghost; }).length;
@@ -639,7 +654,8 @@
   $('show-ob').onchange = function () { S.showOB = this.checked; render(); };
   $('hide-orphan').onchange = function () { S.hideOrphan = this.checked; render(); };
   $('labels-all').onchange = function () { S.labelsAll = this.checked; labelFade(); };
-  ['repel', 'dist', 'center'].forEach(function (k) { $('f-' + k).oninput = function () { S.f[k] = +this.value; $('f-' + k + '-v').textContent = this.value; sim.force('charge', d3.forceManyBody().strength(-S.f.repel)).force('center', d3.forceCenter(W / 2, H / 2).strength(S.f.center / 100)); var lf = sim.force('link'); if (lf) lf.distance(function (l) { return S.f.dist + (l.type === 'committee' || l.type === 'industry' ? 30 : 0); }); sim.alpha(.5).restart(); }; });
+  ['repel', 'dist', 'center'].forEach(function (k) { $('f-' + k).oninput = function () { S.f[k] = +this.value; $('f-' + k + '-v').textContent = this.value; sim.force('charge', d3.forceManyBody().strength(-S.f.repel)); centerForces(); var lf = sim.force('link'); if (lf) lf.distance(function (l) { return S.f.dist + (l.type === 'committee' || l.type === 'industry' ? 30 : 0); }); sim.alpha(.5).restart(); }; });
+  $('cluster').onchange = function () { S.cluster = this.checked; sim.alpha(.5).restart(); };
   $('menu-btn').onclick = function () { $('panel').classList.toggle('hidden'); };
   if (window.matchMedia('(max-width: 760px)').matches) $('panel').classList.add('hidden');
   function fit() {
