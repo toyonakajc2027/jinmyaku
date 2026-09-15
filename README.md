@@ -1,38 +1,55 @@
-# 豊中JC 人脈グラフ（静的版）
+# 豊中JC 人脈グラフ 2027（v1）
 
-**公開URL: https://toyonakajc2027.github.io/jinmyaku/**
-リポジトリ: https://github.com/toyonakajc2027/jinmyaku （JC名義 toyonakajc2027。2026-09-15 に jin1jfk で作成→移管。jin1jfk に push 権限あり）
+2026年版（`../【Apps Script】index.html`）を捨てて1から書き直したもの。Obsidian のグラフビューの「操作の型」を手本にし、
+2027年度向けの出欠アプリ（/shukketsu/）・ホーム（/）と同じ土台（GitHub Pages＋GAS JSON API・合言葉・デザイン言語）に乗せた。
+調査と決定の経緯は `../2027版_調査統合.md`。
 
-2026年度のメンバー60名の人間関係（紹介・CL・趣味・部門・役職・業種・JC歴・誕生月）を D3.js で描く。
-2027年度版に改良する前提の「一度置いた」もの。
+- 公開URL: https://toyonakajc2027.github.io/jinmyaku/ （リポジトリ toyonakajc2027/jinmyaku。`site/` を push）
+- データ: toyonakajc2027 の GAS「豊中JC人脈グラフ」＋スプレッドシート「JC人脈グラフ_DB」（setup() が作る）
+- 名簿（委員会・役職・氏名）は総務委員会のマスター（出欠アプリと同じ `MASTER_SOURCE_ID`）から毎回読む。年度が替われば自動で新しい構成になる
+- 人脈グラフ固有の属性（業種・趣味・紹介者・クロージング・入会年・生年）だけを「属性」シートに持つ。初回は 2026年のデータ（「JC人脈グラフ_元データ2026」）を setup() が取り込む
 
-## 構成（出欠アプリと同じ型）
-- 画面: この `index.html` 1枚（GitHub Pages）。noindex。
-- データ: jconnecttrust@gmail.com の Apps Script「豊中JC 人脈グラフ」＋スプレッドシート（メンバー／関係シート）。
-  `index.html` の `API_URL`（GAS の /exec）へ `fetch(API_URL+'?fn=getDataForClient')` で取りに行く。
-  `credentials:'omit'` なので複数Googleアカウントにログインしたブラウザでも開ける（GAS直配信の「ページが見つかりません」を回避）。
-- 取れなかった時は前回の結果（localStorage `jcdata`）を出して「表示は前回のもの」と知らせる。
-- Apps Script 直配信（google.script.run）でも動くよう、`fetchData()` が経路を切り替える。
+## 画面でできること
+| 操作 | 由来 |
+|---|---|
+| 全体／まわり（起点＋深さ1〜3） | Obsidian の Global / Local graph |
+| 色分け: 委員会・業種・JC歴・入会年。凡例を押すとその色を隠せる | Obsidian の Groups / Filters |
+| つながりの種類: 紹介（矢印）・クロージング（破線）・趣味（点線）・同じ委員会・同じ業種 | 2026版の8種から、意味の薄い「役職・誕生月・JC歴の線」を落とした |
+| ノードの大きさ＝紹介した人数＋クロージングした人数 | Obsidian の「リンク数」。2026版は非表示クリーク込みの総辺数だったので直した |
+| ホバー・選択で関係の無い人を薄く。ズームアウトで名前を薄く（紹介数3以上と選択近傍は常に出す） | Obsidian のフェード / text fade threshold |
+| 「この人までの経路」: 2人の最短のつながり | UI改善プランの未実装分 |
+| 入会年でたどる（再生で年ごとに人が増える） | Obsidian の Animate ＋ 2026版の入会年順 |
+| ちらばり方（反発・線の長さ・中心へ） | Obsidian の Forces |
+| 名前検索（`/` で検索欄）・URL `?me=氏名` / `#氏名` で起点表示 | UI改善プランの未実装分 |
+| 詳細: 属性／紹介の流れ（上流）／紹介した人／同じ趣味・業種 | 利用場面（紹介系統・話題探し） |
+| 合言葉（出欠アプリと同じ `tjc.pass` を同一オリジンで読む。無ければ入力） | 反証で確定（実名＋生年＋紹介関係を無ゲートで出さない） |
 
-## GAS 側（正本は `../【Apps Script】Code.gs`）
-`doGet` に `?fn=` の JSON API 分岐がある。**Apps Script エディタに貼ったら「デプロイを管理 → 新しいバージョン → デプロイ」まで必要**（URLは不変）。
-確認: `curl -sL "<API_URL>?fn=getDataForClient" | head -c 200` が `{"ok":true,"result":{"members":[...` で始まればOK。
+OB・名簿外の紹介者は白抜き破線の小さな丸（苗字だけ）。名簿の半分近く（2026年は60名中27名）の紹介者が名簿外なので、消すと紹介系統が切れる。既定は表示。
+
+## 見た目の理由
+- 書体: 端末標準（出欠・ホームと同じ。読み込みゼロで iPhone/Android それぞれの正しい字面）
+- 色: 無彩色＋#0071e3 を土台に、ノードの識別色だけ dataviz スキル検証済みの8色（ライト面で CVD・通常視ともに PASS。9色目以降と特別会員は無彩色、OBは白抜き）
+- ライト固定: 本人が黒背景を見にくいと言っている（ホーム/README.md:55）。2026版のダーク＋グラスモーフィズムは捨てた
+
+## GAS のデプロイ（toyonakajc2027 で）
+1. https://script.google.com/ → 新しいプロジェクト → 名前「豊中JC人脈グラフ」→ `Code.gs` の中身を貼る（`index.html` は不要。画面は GitHub Pages）
+2. 関数 `setup` を実行（初回は承認）。DB「JC人脈グラフ_DB」が作られ、2026年の属性が取り込まれる。実行ログにDBのURLが出る
+3. デプロイ → 新しいデプロイ → ウェブアプリ／実行ユーザー: 自分／アクセス: 全員 → URL をコピー
+4. `site/index.html` の `API_URL` に貼って push
+5. 出欠アプリ GAS のスクリプトプロパティ `GRAPH_URL` に https://toyonakajc2027.github.io/jinmyaku/ を入れると、役員メニューに「人脈グラフを開く」が出る
+6. 合言葉は出欠と同じ値（`PASS_MEMBER_DEFAULT`）。出欠側を変えたらここも変えて `setup` 再実行（プロパティ PASS_* を消してから）
+
+## データの入れ方（役員）
+- DBの「属性」シート: 氏名（名簿と同じ表記。全角スペースでも可）｜業種｜趣味（、区切り）｜紹介者｜クロージング｜入会年｜生年
+- 「関係」シート: From｜To｜種類（紹介／クロージング／その他）｜ラベル｜年度 … 紹介・CL以外の関係を足したい時だけ
+- 名簿にいて属性が無い人は、役員合言葉で開くと設定パネルの「役員」に出る（`getMissing`）
 
 ## ローカルで見る
 ```
 cd JCアプリ && python3 -m http.server 8791 --bind 127.0.0.1
-open "http://127.0.0.1:8791/JC%E3%83%A1%E3%83%B3%E3%83%90%E3%83%BC/site/preview.html"
+open "http://127.0.0.1:8791/JC%E3%83%A1%E3%83%B3%E3%83%90%E3%83%BC/2027/site/preview.html"
 ```
-`preview.html` = `index.html` の本体 `<script>` の直前に `<script src="../mock.js">` を挟んだもの（架空40名）。**preview.html と mock.js は公開しない**（`.gitignore`）。
+`preview.html` = `index.html` の本体 `<script>` 直前に `<script src="../mock.js">` を挟んだもの。`mock.js` は2026年の実データなので**公開しない**（site/ の外・preview.html は .gitignore）。合言葉は `tjc2027`。
 
-## 更新
-```
-cd site && git add -A && git commit -m "..." && git push origin main
-```
-反映は最大10分。
-
-## 2027年度版にするとき
-1. スプレッドシートを toyonakajc2027 側にコピーし、名簿を2027年度の委員会構成に入れ替える（`COMMITTEE_COLORS` の委員会名も合わせる）
-2. GAS を toyonakajc2027 で新規作成（`Code.gs` の `openById` を新IDに）→ ウェブアプリとしてデプロイ（実行ユーザー: 自分／アクセス: 全員）
-3. `index.html` の `API_URL` を差し替えて push
-4. 出欠アプリ GAS のスクリプトプロパティ `GRAPH_URL` にこのURLを入れると、役員メニューに「人脈グラフを開く」が出る
+## v2 に回したもの
+本人入力の導線（フォーム）／委員会の年度履歴／合言葉の本決め／複数条件の同時色分け／SVG書き出し
