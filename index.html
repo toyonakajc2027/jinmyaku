@@ -375,7 +375,7 @@
   function buildGraph() {
     var d = S.data, byName = {}, nodes = [], links = [];
     d.members.forEach(function (m) {
-      var n = { id: m.name, name: m.name, ghost: false, committee: m.committee || '', role: m.role || '', industry: m.industry || '', hobbies: m.hobbies || [],
+      var n = { id: m.name, name: m.name, ghost: false, committee: m.committee || '', charge: m.charge || '', role: m.role || '', industry: m.industry || '', hobbies: m.hobbies || [],
         introducer: m.introducer || '', closer: m.closer || '', joinYear: m.joinYear || null, birthYear: m.birthYear || null, intro: [], closed: [], size: 0 };
       byName[n.id] = n; nodes.push(n);
     });
@@ -616,7 +616,7 @@
     var chain = [], cur = n, guard = 0; while (cur && cur.introducer && guard++ < 8) { chain.push(cur.introducer); cur = S.byName[cur.introducer]; if (cur && chain.indexOf(cur.introducer) >= 0) break; }
     var sameHobby = S.nodes.filter(function (m) { return !m.ghost && m.id !== n.id && m.hobbies.some(function (h) { return n.hobbies.indexOf(h) >= 0; }); });
     var sameInd = n.industry ? S.nodes.filter(function (m) { return !m.ghost && m.id !== n.id && m.industry === n.industry; }) : [];
-    var h = '<div class="d-head"><div class="eyebrow">' + (n.ghost ? '名簿外（OB・紹介者）' : '<span class="sw" style="background:' + color(n) + '"></span>' + esc(n.committee) + (n.role ? '　' + esc(n.role) : '')) + '</div><h3>' + esc(n.name) + '</h3><button class="close" id="d-close" aria-label="閉じる">×</button></div><div class="d-body">';
+    var h = '<div class="d-head"><div class="eyebrow">' + (n.ghost ? '名簿外（OB・紹介者）' : '<span class="sw" style="background:' + color(n) + '"></span>' + esc(n.committee) + (n.role ? '　' + esc(n.role) : '') + (n.charge ? '　担当: ' + esc(n.charge) : '')) + '</div><h3>' + esc(n.name) + '</h3><button class="close" id="d-close" aria-label="閉じる">×</button></div><div class="d-body">';
     if (!n.ghost) {
       h += '<dl class="kv">' + (n.industry ? '<dt>業種</dt><dd>' + esc(n.industry) + '</dd>' : '') + (n.hobbies.length ? '<dt>趣味</dt><dd>' + esc(n.hobbies.join('・')) + '</dd>' : '') + (jc ? '<dt>JC歴</dt><dd>' + esc(jc) + '</dd>' : '') + (n.birthYear ? '<dt>生まれ</dt><dd>' + n.birthYear + '年</dd>' : '') + '</dl>';
       if (!n.industry && !n.hobbies.length && !n.joinYear) h += '<div class="d-sec"><span class="empty">属性はまだ入力されていません（役員がDBの「属性」シートに入れると出ます）</span></div>';
