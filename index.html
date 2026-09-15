@@ -271,7 +271,7 @@
   };
 
   // ── サーバー呼び出し（出欠アプリと同じ型）
-  var API_URL = 'https://script.google.com/macros/s/XXXXXXXX/exec'; // ← GAS「豊中JC人脈グラフ」の /exec に差し替える
+  var API_URL = 'https://script.google.com/macros/s/AKfycbxIVg2wCJtRB2Sr77M9IZCTeSJ0vd16_QRBEoSGZrDED8160Wi9q8vtmhaYIN4b82iw/exec'; // ← GAS「豊中JC人脈グラフ」の /exec に差し替える
   var HAS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
   var USE_API = !HAS_GAS && !window.MOCK && /^https?:\/\/script\.google\.com\/macros\/s\/AKfy/.test(API_URL);
   function call(fn) {

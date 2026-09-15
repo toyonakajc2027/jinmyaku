@@ -5,7 +5,7 @@
 調査と決定の経緯は `../2027版_調査統合.md`。
 
 - 公開URL: https://toyonakajc2027.github.io/jinmyaku/ （リポジトリ toyonakajc2027/jinmyaku。`site/` を push）
-- データ: toyonakajc2027 の GAS「豊中JC人脈グラフ」＋スプレッドシート「JC人脈グラフ_DB」（setup() が作る）
+- データ: toyonakajc2027 の GAS「豊中JC人脈グラフ」（/exec = `AKfycbxIVg2w…b82iw`、2026-09-16 v2）＋スプレッドシート「JC人脈グラフ_DB」 https://docs.google.com/spreadsheets/d/1RzowcPpEuNQgA8dadaOqGGQktvHYs4KkkNUIV6iSKaM/edit（setup() が作成・2026属性60名取込済）
 - 名簿（委員会・役職・氏名）は総務委員会のマスター（出欠アプリと同じ `MASTER_SOURCE_ID`）から毎回読む。年度が替われば自動で新しい構成になる
 - 人脈グラフ固有の属性（業種・趣味・紹介者・クロージング・入会年・生年）だけを「属性」シートに持つ。初回は 2026年のデータ（「JC人脈グラフ_元データ2026」）を setup() が取り込む
 
