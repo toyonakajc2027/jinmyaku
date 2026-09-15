@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<script>
+// viewport強制設定 — Apps Script が meta タグを削除する場合の対策
+// <head>内の最初のスクリプトとして実行し、レンダリング前にviewportを確定する
+(function(){
+  var m = document.querySelector('meta[name="viewport"]');
+  if(!m){ m = document.createElement('meta'); m.name='viewport'; document.head.appendChild(m); }
+  m.setAttribute('content','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no');
+})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JC人脈">
+<meta name="theme-color" content="#07070f">
+<meta name="robots" content="noindex, nofollow">
+<title>豊中JC 人脈グラフ</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{height:-webkit-fill-available}
+body{font-family:'Hiragino Kaku Gothic Pro','Noto Sans JP','Meiryo',sans-serif;background:#07070f;color:#ccc;height:100vh;height:100dvh;height:-webkit-fill-available;display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none}
+
+/* ── ヘッダー（モバイルファースト） ── */
+#header{
+  background:rgba(7,7,15,.97);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  padding:7px 12px;
+  display:flex;align-items:center;gap:8px;flex-wrap:nowrap;
+  border-bottom:1px solid rgba(130,100,255,.13);
+  z-index:20;flex-shrink:0;position:relative;
+  box-shadow:0 1px 0 rgba(130,100,255,.06);
+}
+/* PC: フルヘッダー */
+body.is-desktop #header{padding:7px 16px;gap:10px;flex-wrap:wrap;z-index:10;position:static}
+#header h1{
+  font-size:13px;color:#e4e4f0;white-space:nowrap;font-weight:700;
+  letter-spacing:.06em;display:flex;align-items:center;gap:8px;
+}
+.logo-orb{
+  width:22px;height:22px;border-radius:50%;flex-shrink:0;
+  background:radial-gradient(circle at 32% 30%, #b8a8ff 0%, #7c52e8 45%, #3b1e8e 100%);
+  box-shadow:0 0 10px rgba(124,82,232,.7),0 0 22px rgba(124,82,232,.3);
+}
+
+.btn{
+  padding:4px 13px;border:1px solid rgba(255,255,255,.09);
+  border-radius:20px;cursor:pointer;font-size:10px;
+  font-family:inherit;transition:all .2s;
+  background:rgba(255,255,255,.04);color:#777;letter-spacing:.04em;white-space:nowrap;
+}
+.btn:hover{background:rgba(255,255,255,.09);color:#bbb;border-color:rgba(255,255,255,.18)}
+.btn:disabled{opacity:.25;cursor:not-allowed}
+.btn-primary{background:rgba(124,82,232,.1);color:#9878ff;border-color:rgba(124,82,232,.25)}
+.btn-primary:hover{background:rgba(124,82,232,.22);color:#c4aaff;border-color:rgba(124,82,232,.45)}
+
+#last-updated{font-size:10px;color:#2e2e3a;white-space:nowrap}
+.sep{width:1px;height:16px;background:rgba(255,255,255,.06);flex-shrink:0;margin:0 2px}
+.filter-label{font-size:9px;color:#3a3a50;white-space:nowrap;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+
+/* モバイルデフォルト: PCフィルター類を非表示 */
+#header .sep,#header .filter-label,#header .committee-legend,
+#header .rel-filter,#btn-fit,#last-updated{display:none}
+/* PC: フィルター類を表示 */
+body.is-desktop #header .sep{display:block}
+body.is-desktop #header .filter-label{display:inline}
+body.is-desktop #header .committee-legend{display:flex}
+body.is-desktop #header .rel-filter{display:flex}
+body.is-desktop #btn-fit{display:inline-flex}
+body.is-desktop #last-updated{display:inline}
+
+/* 委員会凡例 */
+.committee-legend{display:flex;flex-wrap:wrap;gap:3px}
+.legend-pill{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;padding:3px 9px;border-radius:20px;
+  border:1px solid rgba(255,255,255,.06);
+  cursor:pointer;transition:all .2s;white-space:nowrap;user-select:none;
+  color:#666;background:transparent;
+}
+.legend-pill:hover{border-color:rgba(255,255,255,.16);color:#aaa;background:rgba(255,255,255,.03)}
+.legend-pill.off{opacity:.15}
+.legend-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+
+/* 繋がりフィルター */
+.rel-filter{display:flex;gap:3px;flex-wrap:wrap}
+.rel-pill{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;padding:3px 9px;border-radius:20px;
+  border:1px solid transparent;cursor:pointer;
+  transition:all .2s;user-select:none;color:#3a3a4e;
+  background:transparent;letter-spacing:.03em;
+}
+.rel-pill::before{
+  content:'';width:4px;height:4px;border-radius:50%;
+  background:currentColor;flex-shrink:0;
+  transition:transform .2s,box-shadow .2s;
+}
+.rel-pill:hover{color:#666}
+.rel-pill.on::before{transform:scale(1.5)}
+.rel-pill.intro.on{color:#7299ff;background:rgba(91,143,255,.08);border-color:rgba(91,143,255,.22)}
+.rel-pill.intro.on::before{box-shadow:0 0 5px rgba(91,143,255,.8)}
+.rel-pill.closing.on{color:#ffaa4d;background:rgba(255,159,67,.08);border-color:rgba(255,159,67,.22)}
+.rel-pill.closing.on::before{box-shadow:0 0 5px rgba(255,159,67,.8)}
+.rel-pill.hobby.on{color:#2edda8;background:rgba(38,208,160,.08);border-color:rgba(38,208,160,.22)}
+.rel-pill.hobby.on::before{box-shadow:0 0 5px rgba(38,208,160,.8)}
+.rel-pill.dept.on{color:#e84393;background:rgba(232,67,147,.08);border-color:rgba(232,67,147,.22)}
+.rel-pill.dept.on::before{box-shadow:0 0 5px rgba(232,67,147,.8)}
+.rel-pill.role.on{color:#ff7a7a;background:rgba(255,107,107,.08);border-color:rgba(255,107,107,.22)}
+.rel-pill.role.on::before{box-shadow:0 0 5px rgba(255,107,107,.8)}
+.rel-pill.industry.on{color:#bd93f9;background:rgba(189,147,249,.08);border-color:rgba(189,147,249,.22)}
+.rel-pill.industry.on::before{box-shadow:0 0 5px rgba(189,147,249,.8)}
+.rel-pill.jcgroup.on{color:#ffd166;background:rgba(255,209,102,.08);border-color:rgba(255,209,102,.22)}
+.rel-pill.jcgroup.on::before{box-shadow:0 0 5px rgba(255,209,102,.8)}
+.rel-pill.birthmonth.on{color:#ff9de2;background:rgba(255,157,226,.08);border-color:rgba(255,157,226,.22)}
+.rel-pill.birthmonth.on::before{box-shadow:0 0 5px rgba(255,157,226,.8)}
+
+/* 検索 */
+#search-wrap{position:relative;display:flex;align-items:center}
+#search-wrap svg{position:absolute;left:9px;opacity:.22;pointer-events:none}
+#search-input{
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.07);
+  color:#ccc;padding:4px 10px 4px 28px;
+  border-radius:20px;font-size:11px;width:110px;
+  font-family:inherit;transition:all .25s;
+}
+#search-input:focus{
+  outline:none;border-color:rgba(124,82,232,.4);
+  background:rgba(124,82,232,.04);width:140px;
+  box-shadow:0 0 0 3px rgba(124,82,232,.07);
+}
+body.is-desktop #search-input{width:128px}
+body.is-desktop #search-input:focus{width:168px}
+#search-input::placeholder{color:#2e2e3a}
+
+/* ── メイン ── */
+#main{display:flex;flex:1;overflow:hidden;position:relative}
+#graph-container{flex:1;position:relative;overflow:hidden}
+svg#graph{width:100%;height:100%;display:block}
+
+/* ── 詳細パネル（モバイルファースト: ボトムシート） ── */
+#detail-panel{
+  position:fixed;bottom:0;left:0;right:0;top:auto;
+  width:100%;height:0;
+  background:rgba(7,7,15,.99);
+  border-left:none;border-top:1px solid rgba(130,100,255,.15);
+  border-radius:18px 18px 0 0;
+  overflow:visible;flex-shrink:0;
+  display:flex;flex-direction:column;
+  transition:height .35s cubic-bezier(.4,0,.2,1);
+  z-index:100;
+}
+#detail-panel.open{height:64vh}
+/* PC: サイドパネル */
+body.is-desktop #detail-panel{
+  position:static;bottom:auto;left:auto;right:auto;
+  width:0;height:auto;
+  border-left:1px solid rgba(130,100,255,.1);border-top:none;
+  border-radius:0;overflow:hidden;
+  transition:width .3s cubic-bezier(.4,0,.2,1);
+  z-index:auto;
+}
+body.is-desktop #detail-panel.open{width:290px;height:auto}
+#detail-scroll{overflow-y:auto;flex:1;border-radius:18px 18px 0 0}
+body.is-desktop #detail-scroll{border-radius:0}
+#detail-scroll::-webkit-scrollbar{width:3px}
+#detail-scroll::-webkit-scrollbar-track{background:transparent}
+#detail-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.07);border-radius:2px}
+
+#detail-head{
+  padding:20px 18px 15px;
+  position:sticky;top:0;
+  background:rgba(7,7,15,.99);
+  backdrop-filter:blur(8px);
+  z-index:2;
+}
+#btn-close{
+  float:right;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
+  color:#444;font-size:13px;cursor:pointer;
+  line-height:1;transition:all .15s;
+  width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  margin-top:1px;margin-left:4px;
+}
+#btn-close:hover{color:#fff;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)}
+.d-name{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px;clear:both;line-height:1.2;letter-spacing:-.02em}
+.d-committee{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:700;margin-bottom:8px;
+  padding:3px 10px;border-radius:20px;letter-spacing:.05em;
+}
+.d-role{font-size:11px;color:#3a3a55;margin-bottom:6px;padding-left:1px}
+.d-industry{font-size:12px;color:#555;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.hobby-tags{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:2px}
+.hobby-tag{
+  background:rgba(46,221,168,.06);color:#2edda8;
+  border:1px solid rgba(46,221,168,.15);
+  padding:2px 9px;border-radius:20px;font-size:10px;
+}
+
+#detail-body{padding:12px 18px 22px}
+.d-section{margin-bottom:18px}
+.d-section-title{
+  font-size:9px;color:#2e2e3a;letter-spacing:.14em;
+  text-transform:uppercase;margin-bottom:8px;
+  display:flex;align-items:center;gap:8px;font-weight:700;
+}
+.d-section-title::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.04)}
+.rel-list{list-style:none}
+.rel-list li{
+  font-size:12px;padding:5px 0;
+  border-bottom:1px solid rgba(255,255,255,.03);
+  display:flex;align-items:center;gap:7px;color:#666;
+}
+.rel-list li:last-child{border:none}
+.sub-label{font-size:9px;color:#252535;width:100%;padding:6px 0 2px;border:none!important;letter-spacing:.08em;text-transform:uppercase}
+.empty{font-size:12px;color:#1e1e28;font-style:italic;text-align:center;padding:24px 0}
+
+.badge{
+  padding:2px 8px;border-radius:20px;
+  font-size:9px;font-weight:700;white-space:nowrap;
+  flex-shrink:0;letter-spacing:.04em;
+}
+.badge-intro{background:rgba(91,143,255,.1);color:#7299ff;border:1px solid rgba(91,143,255,.2)}
+.badge-cl{background:rgba(255,159,67,.1);color:#ffaa4d;border:1px solid rgba(255,159,67,.2)}
+.badge-other{background:rgba(255,255,255,.04);color:#555;border:1px solid rgba(255,255,255,.08)}
+.badge-hobby{background:rgba(46,221,168,.07);color:#2edda8;border:1px solid rgba(46,221,168,.15)}
+
+.clink{cursor:pointer;color:#9878ff;transition:color .15s}
+.clink:hover{color:#c4aaff}
+
+.hobby-group{margin-bottom:12px}
+.hobby-group-header{
+  font-size:10px;color:#2edda8;margin-bottom:5px;
+  display:flex;align-items:center;gap:5px;letter-spacing:.02em;
+}
+.hobby-group-header::before{content:'';width:3px;height:3px;border-radius:50%;background:#2edda8;flex-shrink:0}
+
+/* ── ステータスバー（モバイルファースト） ── */
+#statusbar{
+  background:rgba(7,7,12,.97);
+  border-top:1px solid rgba(255,255,255,.04);
+  padding:4px 14px;font-size:9px;color:#252535;
+  display:flex;gap:14px;flex-shrink:0;letter-spacing:.04em;align-items:center;
+}
+body.is-desktop #statusbar{padding:4px 18px;font-size:10px;gap:22px}
+#statusbar b{color:#3a3a55}
+
+/* ── ツールチップ ── */
+#tooltip{
+  position:fixed;
+  background:rgba(10,10,22,.97);
+  border:1px solid rgba(130,100,255,.18);
+  backdrop-filter:blur(14px);
+  padding:10px 14px;border-radius:12px;
+  font-size:12px;pointer-events:none;
+  display:none;z-index:200;
+  max-width:220px;line-height:1.7;
+  box-shadow:0 16px 48px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.03),0 0 20px rgba(124,82,232,.08);
+}
+#tooltip .tt-name{font-weight:700;color:#fff;font-size:14px;letter-spacing:-.01em;margin-bottom:1px}
+#tooltip .tt-cmt{font-size:10px;font-weight:700;letter-spacing:.05em;margin-bottom:3px}
+#tooltip .tt-sub{color:#4a4a62;font-size:11px}
+
+/* ── ローディング ── */
+#loading{
+  display:flex;position:fixed;inset:0;
+  background:rgba(7,7,15,.96);z-index:500;
+  align-items:center;justify-content:center;
+  flex-direction:column;gap:18px;
+}
+#loading.hide{display:none}
+.spinner{
+  width:28px;height:28px;
+  border:1.5px solid rgba(124,82,232,.15);
+  border-top-color:#9878ff;
+  border-radius:50%;animation:spin .55s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading p{color:#2e2e3a;font-size:11px;letter-spacing:.1em}
+
+/* ── トースト ── */
+#toast{
+  display:none;position:fixed;bottom:28px;left:50%;
+  transform:translateX(-50%);
+  background:rgba(210,50,50,.93);color:#fff;
+  padding:8px 22px;border-radius:20px;
+  font-size:11px;z-index:600;white-space:nowrap;
+  backdrop-filter:blur(8px);letter-spacing:.03em;
+  box-shadow:0 6px 24px rgba(210,50,50,.35);
+}
+
+/* ── D3 ── */
+.node{cursor:pointer}
+.link{fill:none}
+.link.intro  {stroke:#6b9fff;stroke-width:1.5;opacity:.5}
+.link.closing{stroke:#ffaa4d;stroke-width:1.5;opacity:.5}
+.link.other  {stroke:#666;stroke-width:1;opacity:.4}
+.link.hobby  {stroke:#2edda8;stroke-width:1;stroke-dasharray:6,5;opacity:.38}
+.link.dept   {stroke:#e84393;stroke-width:.75;stroke-dasharray:3,5;opacity:.3}
+.link.role   {stroke:#ff7a7a;stroke-width:.75;stroke-dasharray:3,5;opacity:.3}
+.link.industry  {stroke:#bd93f9;stroke-width:.75;stroke-dasharray:3,5;opacity:.3}
+.link.jcgroup   {stroke:#ffd166;stroke-width:.9;stroke-dasharray:5,5;opacity:.28}
+.link.birthmonth{stroke:#ff9de2;stroke-width:.9;stroke-dasharray:5,5;opacity:.28}
+.link.faded     {opacity:.012!important}
+.node.faded  {opacity:.04}
+
+/* OBOG 点線アニメ */
+@keyframes dash-spin{to{stroke-dashoffset:-14}}
+.node-ghost .ghost-ring{animation:dash-spin 3.5s linear infinite}
+
+/* 選択リング */
+@keyframes ring-pulse{
+  0%,100%{r:0;opacity:.6}
+  50%{r:6;opacity:0}
+}
+
+/* ================================================================
+   モバイル共通（モバイルファースト: ハンバーガーボタンはデフォルト表示）
+   ================================================================ */
+#menu-btn{
+  display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;min-width:34px;border-radius:9px;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.1);
+  color:#888;cursor:pointer;font-size:18px;line-height:1;
+  margin-left:auto;flex-shrink:0;
+}
+body.is-desktop #menu-btn{display:none}
+#drawer{
+  position:fixed;top:0;left:0;right:0;
+  background:rgba(7,7,15,.98);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid rgba(130,100,255,.15);
+  padding:58px 18px 18px;
+  z-index:19;
+  transform:translateY(-110%);
+  transition:transform .3s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;gap:14px;
+}
+#drawer.open{transform:translateY(0)}
+#overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.55);
+  z-index:18;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s;
+}
+#overlay.show{opacity:1;pointer-events:auto}
+.drawer-section-label{
+  font-size:9px;color:#3a3a50;letter-spacing:.12em;
+  text-transform:uppercase;font-weight:700;margin-bottom:6px;
+}
+.sheet-handle{
+  display:flex;justify-content:center;
+  padding:10px 0 6px;flex-shrink:0;cursor:pointer;
+}
+body.is-desktop .sheet-handle{display:none}
+.sheet-handle-bar{
+  width:38px;height:4px;border-radius:2px;
+  background:rgba(255,255,255,.15);
+}
+
+/* ================================================================
+   ドロワー内フィルター（常時適用: ドロワーはモバイルのみ使用）
+   ================================================================ */
+#drawer .rel-filter{flex-wrap:wrap;gap:6px}
+#drawer .rel-pill{padding:6px 12px;font-size:11px}
+#drawer .legend-pill{padding:5px 11px;font-size:11px}
+
+/* ツールチップ: PCのみ表示（モバイルはhover不要） */
+body:not(.is-desktop) #tooltip{display:none!important}
+
+/* ── ソートボタン ── */
+#btn-sort-year{display:none}
+body.is-desktop #btn-sort-year{display:inline-flex}
+#btn-sort-year.active{background:rgba(124,82,232,.15);color:#a88bff;border-color:rgba(124,82,232,.35)}
+
+/* タッチデバイス強制モバイル（JS検知が失敗してもCSSで確実にモバイル表示） */
+@media (pointer:coarse){
+  #header .sep,#header .filter-label,#header .committee-legend,
+  #header .rel-filter,#btn-fit,#last-updated,
+  #btn-sort-year{display:none!important}
+  #menu-btn{display:flex!important}
+  #tooltip{display:none!important}
+  #detail-panel{
+    position:fixed!important;bottom:0!important;left:0!important;right:0!important;
+    width:100%!important;border-left:none!important;border-top:1px solid rgba(130,100,255,.15)!important;
+    border-radius:18px 18px 0 0!important;
+  }
+  #detail-panel.open{height:64vh!important;width:100%!important}
+}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1><div class="logo-orb"></div>豊中JC 人脈グラフ</h1>
+  <button class="btn btn-primary" id="btn-refresh">↺ 更新</button>
+  <button class="btn" id="btn-fit">⊡ フィット</button>
+  <span id="last-updated"></span>
+  <div class="sep"></div>
+  <span class="filter-label">委員会</span>
+  <div class="committee-legend" id="committee-legend"></div>
+  <div class="sep"></div>
+  <span class="filter-label">繋がり</span>
+  <div class="rel-filter" id="rel-filter-pc">
+    <span class="rel-pill intro on"   data-t="intro"      onclick="toggleRel(this)">紹介</span>
+    <span class="rel-pill closing on" data-t="closing"    onclick="toggleRel(this)">CL</span>
+    <span class="rel-pill hobby on"   data-t="hobby"      onclick="toggleRel(this)">趣味</span>
+    <span class="rel-pill dept"       data-t="dept"       onclick="toggleRel(this)">部門</span>
+    <span class="rel-pill role"       data-t="role"       onclick="toggleRel(this)">役職</span>
+    <span class="rel-pill industry"   data-t="industry"   onclick="toggleRel(this)">業種</span>
+    <span class="rel-pill jcgroup"    data-t="jcgroup"    onclick="toggleRel(this)">JC歴</span>
+    <span class="rel-pill birthmonth" data-t="birthmonth" onclick="toggleRel(this)">誕生月</span>
+  </div>
+  <div class="sep"></div>
+  <button class="btn" id="btn-sort-year" onclick="toggleYearSort()">入会年順</button>
+  <div class="sep"></div>
+  <div id="search-wrap">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input id="search-input" type="text" placeholder="名前で検索...">
+  </div>
+  <button id="menu-btn" onclick="toggleDrawer()">☰</button>
+</div>
+
+<!-- モバイル用ドロワー -->
+<div id="drawer">
+  <div>
+    <div class="drawer-section-label">委員会</div>
+    <div class="committee-legend" id="committee-legend-sp"></div>
+  </div>
+  <div>
+    <div class="drawer-section-label">ソート</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn" id="btn-sort-year-sp" onclick="toggleYearSort()">入会年順</button>
+    </div>
+  </div>
+  <div>
+    <div class="drawer-section-label">繋がり</div>
+    <div class="rel-filter" id="rel-filter-sp">
+      <span class="rel-pill intro on"   data-t="intro"      onclick="toggleRel(this)">紹介</span>
+      <span class="rel-pill closing on" data-t="closing"    onclick="toggleRel(this)">CL</span>
+      <span class="rel-pill hobby on"   data-t="hobby"      onclick="toggleRel(this)">趣味</span>
+      <span class="rel-pill dept"       data-t="dept"       onclick="toggleRel(this)">部門</span>
+      <span class="rel-pill role"       data-t="role"       onclick="toggleRel(this)">役職</span>
+      <span class="rel-pill industry"   data-t="industry"   onclick="toggleRel(this)">業種</span>
+      <span class="rel-pill jcgroup"    data-t="jcgroup"    onclick="toggleRel(this)">JC歴</span>
+      <span class="rel-pill birthmonth" data-t="birthmonth" onclick="toggleRel(this)">誕生月</span>
+    </div>
+  </div>
+</div>
+<div id="overlay" onclick="closeDrawer()"></div>
+
+<div id="main">
+  <div id="graph-container">
+    <svg id="graph"></svg>
+    <div id="tooltip"></div>
+  </div>
+  <div id="detail-panel">
+    <div class="sheet-handle" onclick="closePanel()"><div class="sheet-handle-bar"></div></div>
+    <div id="detail-scroll">
+      <div id="detail-head"></div>
+      <div id="detail-body"></div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span>メンバー <b id="st-m">0</b></span>
+  <span>紹介 <b id="st-r">0</b></span>
+  <span>趣味の繋がり <b id="st-h">0</b></span>
+  <span>業種登録 <b id="st-i">0</b></span>
+</div>
+
+<div id="loading"><div class="spinner"></div><p>データを読み込んでいます...</p></div>
+<div id="toast"></div>
+<!-- デバッグ表示（確認後削除可） -->
+
+<script>
+// ================================================================
+// 定数
+// ================================================================
+const COMMITTEE_COLORS = {
+  '役員':           '#ff7eb3',
+  '共育確立委員会':  '#6ba3ff',
+  '地域確立委員会':  '#2edda8',
+  '総務委員会':      '#ffbb55',
+  '60周年準備委員会':'#c4a0ff',
+  '会員拡大委員会':  '#1ad4ff',
+  '会員開発委員会':  '#ff7a7a',
+  '財政・事務局':    '#d4b888',
+  '特別会員':        '#666688',
+  'OBOG等':          '#e8c46a'
+};
+const cColor = c => COMMITTEE_COLORS[c] || '#6677aa';
+
+let yearSortActive = false;
+
+function toggleYearSort(){
+  yearSortActive = !yearSortActive;
+  ['btn-sort-year','btn-sort-year-sp'].forEach(id=>{ const b=document.getElementById(id); if(b) b.classList.toggle('active', yearSortActive); });
+  if(yearSortActive){
+    const years=[...new Set(visNodes.map(d=>d.joinYear).filter(Boolean))].sort();
+    const step=W/(years.length+1);
+    const yearX={};
+    years.forEach((y,i)=>yearX[y]=step*(i+1));
+    sim.force('clusterX', d3.forceX(d=>d.joinYear?yearX[d.joinYear]:W/2).strength(0.28))
+       .force('clusterY', d3.forceY(H/2).strength(0.08))
+       .alpha(0.5).restart();
+  } else {
+    sim.force('clusterX',null).force('clusterY',null)
+       .force('center',d3.forceCenter(W/2,H/2)).alpha(0.3).restart();
+  }
+}
+
+// ノード半径（繋がり数に応じて動的に変化）
+const isObog = d => d.committee === 'OBOG等';
+let degree = {};
+const R = d => {
+  if (isObog(d)) return 10;
+  return Math.min(28, 14 + (degree[d.id] || 0) * 1.5);
+};
+
+// ================================================================
+// 状態
+// ================================================================
+let members=[], relations=[], allEdges=[];
+let hiddenCommittees = new Set();
+let hiddenRelTypes   = new Set(['dept','role','industry','jcgroup','birthmonth']);
+let searchQuery='', selectedId=null;
+let savedPos={};
+try{ savedPos=JSON.parse(localStorage.getItem('jcpos')||'{}'); }catch(e){}
+
+// ================================================================
+// D3 初期化
+// ================================================================
+const svg = d3.select('#graph');
+const g   = svg.append('g');
+let W=0,H=0,linkSel,nodeSel,sim;
+
+function getWH(){
+  const c=document.getElementById('graph-container');
+  W=c.clientWidth; H=c.clientHeight;
+}
+
+const zoom = d3.zoom().scaleExtent([.03,7]).on('zoom',e=>g.attr('transform',e.transform));
+svg.call(zoom);
+
+// SVGリソース（defs）
+(function(){
+  const defs = svg.append('defs');
+
+  // ドットパターン背景
+  const pat = defs.append('pattern').attr('id','dots')
+    .attr('x',0).attr('y',0).attr('width',36).attr('height',36)
+    .attr('patternUnits','userSpaceOnUse');
+  pat.append('circle').attr('cx',18).attr('cy',18).attr('r',.75)
+    .attr('fill','rgba(180,160,255,0.045)');
+
+  // ノードグロー（通常）
+  const f1 = defs.append('filter').attr('id','glow')
+    .attr('x','-60%').attr('y','-60%').attr('width','220%').attr('height','220%');
+  f1.append('feGaussianBlur').attr('in','SourceGraphic')
+    .attr('stdDeviation','3').attr('result','blur');
+  const m1 = f1.append('feMerge');
+  m1.append('feMergeNode').attr('in','blur');
+  m1.append('feMergeNode').attr('in','SourceGraphic');
+
+  // ノードグロー（選択時・強）
+  const f2 = defs.append('filter').attr('id','glow-sel')
+    .attr('x','-120%').attr('y','-120%').attr('width','340%').attr('height','340%');
+  f2.append('feGaussianBlur').attr('in','SourceGraphic')
+    .attr('stdDeviation','9').attr('result','blur');
+  const m2 = f2.append('feMerge');
+  m2.append('feMergeNode').attr('in','blur');
+  m2.append('feMergeNode').attr('in','SourceGraphic');
+
+  // 矢印マーカー（通常・細め）
+  [{id:'arr-intro',color:'#6b9fff'},{id:'arr-closing',color:'#ffaa4d'},{id:'arr-other',color:'#666688'}]
+  .forEach(({id,color})=>{
+    defs.append('marker').attr('id',id)
+      .attr('viewBox','0 -5 10 10').attr('refX',32).attr('refY',0)
+      .attr('markerWidth',7).attr('markerHeight',7).attr('orient','auto')
+      .append('path').attr('d','M0,-4.5L10,0L0,4.5')
+        .attr('fill',color).attr('opacity','.7');
+  });
+})();
+
+// ================================================================
+// データ処理
+// ================================================================
+function processData(data){
+  members   = data.members   || [];
+  relations = data.relations || [];
+
+  // 趣味エッジ
+  const hobbyEdges=[];
+  for(let i=0;i<members.length;i++){
+    for(let j=i+1;j<members.length;j++){
+      const mi=members[i],mj=members[j];
+      const shared=mi.hobbies.filter(h=>h&&mj.hobbies.includes(h));
+      if(shared.length) hobbyEdges.push({
+        id:'h_'+i+'_'+j,source:mi.id,target:mj.id,
+        type:'hobby',label:shared.join('・'),directed:false
+      });
+    }
+  }
+
+  // 部門エッジ
+  const deptEdges=[];
+  for(let i=0;i<members.length;i++){
+    for(let j=i+1;j<members.length;j++){
+      const mi=members[i],mj=members[j];
+      if(mi.committee&&mi.committee===mj.committee&&mi.committee!=='OBOG等')
+        deptEdges.push({id:'dept_'+i+'_'+j,source:mi.id,target:mj.id,type:'dept',label:mi.committee,directed:false});
+    }
+  }
+
+  // 役職エッジ
+  const roleEdges=[];
+  for(let i=0;i<members.length;i++){
+    for(let j=i+1;j<members.length;j++){
+      const mi=members[i],mj=members[j];
+      if(mi.role&&mi.role===mj.role&&!isObog(mi)&&!isObog(mj))
+        roleEdges.push({id:'role_'+i+'_'+j,source:mi.id,target:mj.id,type:'role',label:mi.role,directed:false});
+    }
+  }
+
+  // 業種エッジ
+  const industryEdges=[];
+  for(let i=0;i<members.length;i++){
+    for(let j=i+1;j<members.length;j++){
+      const mi=members[i],mj=members[j];
+      if(mi.industry&&mi.industry===mj.industry&&!isObog(mi)&&!isObog(mj))
+        industryEdges.push({id:'ind_'+i+'_'+j,source:mi.id,target:mj.id,type:'industry',label:mi.industry,directed:false});
+    }
+  }
+
+  // JC歴グループエッジ（同じグループ同士）
+  const jcgroupEdges=[];
+  for(let i=0;i<members.length;i++){
+    for(let j=i+1;j<members.length;j++){
+      const mi=members[i],mj=members[j];
+      if(mi.jcGroup&&mi.jcGroup===mj.jcGroup&&!isObog(mi)&&!isObog(mj))
+        jcgroupEdges.push({id:'jcg_'+i+'_'+j,source:mi.id,target:mj.id,type:'jcgroup',label:mi.jcGroup,directed:false});
+    }
+  }
+
+  // 誕生月エッジ（同じ月生まれ同士）
+  const birthmonthEdges=[];
+  for(let i=0;i<members.length;i++){
+    for(let j=i+1;j<members.length;j++){
+      const mi=members[i],mj=members[j];
+      if(mi.birthMonth&&mi.birthMonth===mj.birthMonth&&!isObog(mi)&&!isObog(mj))
+        birthmonthEdges.push({id:'bm_'+i+'_'+j,source:mi.id,target:mj.id,type:'birthmonth',label:mi.birthMonth+'月生まれ',directed:false});
+    }
+  }
+
+  // 関係エッジ + OBOG等ゴースト自動生成
+  const nameMap={};
+  members.forEach(m=>{ nameMap[m.name]=m; });
+  let ghostIdx=0;
+  relations.forEach(r=>{
+    [r.from,r.to].forEach(name=>{
+      if(name&&!nameMap[name]){
+        const ghost={
+          id:'ghost_'+(ghostIdx++),name,
+          committee:'OBOG等',role:'OB・紹介者',
+          industry:'',hobbies:[],introducer:'',closer:'',extra:{}
+        };
+        members.push(ghost);
+        nameMap[name]=ghost;
+      }
+    });
+  });
+
+  const relEdges=[];
+  relations.forEach(r=>{
+    const fm=nameMap[r.from],tm=nameMap[r.to];
+    if(!fm||!tm) return;
+    const typeKey = r.type==='紹介'?'intro':r.type==='クロージング'?'closing':'other';
+    relEdges.push({id:r.id,source:fm.id,target:tm.id,type:typeKey,label:r.label,directed:true});
+  });
+
+  allEdges=[...relEdges,...hobbyEdges,...deptEdges,...roleEdges,...industryEdges,...jcgroupEdges,...birthmonthEdges];
+
+  // 次数（繋がり数）を計算
+  degree = {};
+  allEdges.forEach(e=>{
+    const s=typeof e.source==='object'?e.source.id:e.source;
+    const t=typeof e.target==='object'?e.target.id:e.target;
+    degree[s]=(degree[s]||0)+1;
+    degree[t]=(degree[t]||0)+1;
+  });
+
+  document.getElementById('st-m').textContent = members.filter(m=>!isObog(m)).length;
+  document.getElementById('st-r').textContent = relEdges.length;
+  document.getElementById('st-h').textContent = hobbyEdges.length;
+  document.getElementById('st-i').textContent = members.filter(m=>m.industry&&!isObog(m)).length;
+
+  const now=new Date();
+  document.getElementById('last-updated').textContent =
+    `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} 更新`;
+
+  buildLegend();
+  redraw();
+  if(selectedId&&members.find(m=>m.id===selectedId)) renderDetail(selectedId);
+}
+
+// ================================================================
+// 凡例
+// ================================================================
+function buildLegend(){
+  const used=[...new Set(members.map(m=>m.committee||'その他'))];
+  ['committee-legend','committee-legend-sp'].forEach(id=>{
+    const box=document.getElementById(id);
+    if(!box) return;
+    box.innerHTML='';
+    used.forEach(c=>{
+      const el=document.createElement('span');
+      el.className='legend-pill'+(hiddenCommittees.has(c)?' off':'');
+      el.innerHTML=`<span class="legend-dot" style="background:${cColor(c)}"></span>${c}`;
+      el.onclick=()=>{
+        hiddenCommittees.has(c)?hiddenCommittees.delete(c):hiddenCommittees.add(c);
+        // PC・SP両方のpillを同期
+        document.querySelectorAll('.legend-pill').forEach(p=>{
+          if(p.textContent.trim()===c) p.classList.toggle('off',hiddenCommittees.has(c));
+        });
+        redraw();
+      };
+      box.appendChild(el);
+    });
+  });
+}
+
+function toggleRel(el){
+  const t=el.dataset.t;
+  const nowOn=el.classList.toggle('on');
+  nowOn?hiddenRelTypes.delete(t):hiddenRelTypes.add(t);
+  // PC・SP両方のpillを同期
+  document.querySelectorAll(`.rel-pill[data-t="${t}"]`).forEach(p=>{
+    p.classList.toggle('on',nowOn);
+  });
+  redraw();
+}
+
+// ================================================================
+// 描画
+// ================================================================
+let bgAdded=false;
+function ensureBg(){
+  if(bgAdded) return; bgAdded=true;
+  g.insert('rect',':first-child')
+    .attr('x',-8000).attr('y',-8000).attr('width',16000).attr('height',16000)
+    .attr('fill','url(#dots)').attr('pointer-events','none');
+}
+
+function redraw(){
+  getWH();
+  ensureBg();
+
+  const q=searchQuery.toLowerCase().trim();
+  const visNodes=members.filter(m=>{
+    if(hiddenCommittees.has(m.committee||'その他')) return false;
+    if(q&&!m.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const visSet=new Set(visNodes.map(n=>n.id));
+  const visEdges=allEdges.filter(e=>{
+    const s=typeof e.source==='object'?e.source.id:e.source;
+    const t=typeof e.target==='object'?e.target.id:e.target;
+    return visSet.has(s)&&visSet.has(t)&&!hiddenRelTypes.has(e.type);
+  });
+
+  visNodes.forEach(n=>{ const p=savedPos[n.id]; if(p&&!n.x){n.x=p.x;n.y=p.y;} });
+
+  g.selectAll('.links,.nodes').remove();
+
+  // ── エッジ（弧線パス）
+  linkSel = g.append('g').attr('class','links')
+    .selectAll('path').data(visEdges,d=>d.id).enter().append('path')
+    .attr('class',d=>`link ${d.type}`)
+    .attr('marker-end',d=>d.directed?`url(#arr-${d.type})`:null);
+
+  // ── ノード
+  const ng = g.append('g').attr('class','nodes');
+  nodeSel = ng.selectAll('.node').data(visNodes,d=>d.id).enter()
+    .append('g').attr('class',d=>`node${isObog(d)?' node-ghost':''}`)
+    .call(d3.drag()
+      .on('start',(e,d)=>{ if(!e.active) sim.alphaTarget(.25).restart(); d.fx=d.x;d.fy=d.y; })
+      .on('drag', (e,d)=>{ d.fx=e.x;d.fy=e.y; })
+      .on('end',  (e,d)=>{ if(!e.active) sim.alphaTarget(0); savedPos[d.id]={x:d.x,y:d.y}; localStorage.setItem('jcpos',JSON.stringify(savedPos)); }))
+    .on('click',(e,d)=>{ e.stopPropagation(); selectNode(d.id); })
+    .on('mouseover',(ev,d)=>{
+      const tt=document.getElementById('tooltip');
+      const c=cColor(d.committee);
+      let html=`<div class="tt-name">${d.name}</div>`;
+      if(d.committee) html+=`<div class="tt-cmt" style="color:${c}">${d.committee}</div>`;
+      if(d.industry) html+=`<div class="tt-sub">📍 ${d.industry}</div>`;
+      if(d.hobbies&&d.hobbies.length) html+=`<div class="tt-sub">🎯 ${d.hobbies.join('・')}</div>`;
+      tt.innerHTML=html; tt.style.display='block';
+    })
+    .on('mousemove',ev=>{
+      const tt=document.getElementById('tooltip');
+      const x=ev.clientX+16, y=ev.clientY-10;
+      tt.style.left=Math.min(x,window.innerWidth-230)+'px';
+      tt.style.top=Math.max(10,y)+'px';
+    })
+    .on('mouseout',()=>{ document.getElementById('tooltip').style.display='none'; });
+
+  // 外側アンビエント輪（選択時だけ光る）
+  nodeSel.append('circle')
+    .attr('class','outer-glow')
+    .attr('r',d=>R(d)+12)
+    .attr('fill',d=>cColor(d.committee))
+    .attr('opacity',0)
+    .attr('pointer-events','none');
+
+  // OBOG点線アニメリング
+  nodeSel.filter(d=>isObog(d)).append('circle')
+    .attr('class','ghost-ring')
+    .attr('r',d=>R(d)+5)
+    .attr('fill','none')
+    .attr('stroke',d=>cColor(d.committee))
+    .attr('stroke-width',1)
+    .attr('stroke-dasharray','4,3')
+    .attr('opacity',.45)
+    .attr('pointer-events','none');
+
+  // メイン円
+  nodeSel.append('circle')
+    .attr('class','main-circle')
+    .attr('r',R)
+    .attr('fill',d=>{
+      if(isObog(d)) return 'rgba(12,12,22,.95)';
+      return cColor(d.committee);
+    })
+    .attr('fill-opacity',d=>isObog(d)?1:.82)
+    .attr('stroke',d=>isObog(d)?cColor(d.committee):'rgba(255,255,255,0.12)')
+    .attr('stroke-width',d=>isObog(d)?1.2:1)
+    .attr('filter','url(#glow)');
+
+  // 名前ラベル（ノードの下に浮かせる）
+  nodeSel.each(function(d){
+    const s = d3.select(this);
+    const surname = (d.name.split(/[\s　]/)[0]||d.name);
+    const r = R(d);
+    const ghost = isObog(d);
+    const lColor = ghost ? '#c8a84e' : '#d0d0e8';
+    const lOpacity = ghost ? 0.7 : 0.85;
+    const fs = ghost ? 9 : 10;
+
+    if(surname.length <= 4){
+      s.append('text')
+        .text(surname)
+        .attr('y', r+14)
+        .attr('font-size', fs+'px')
+        .attr('fill', lColor)
+        .attr('fill-opacity', lOpacity)
+        .attr('text-anchor','middle')
+        .attr('pointer-events','none')
+        .attr('font-weight', ghost?'400':'500')
+        .attr('font-style', ghost?'italic':'normal')
+        .attr('letter-spacing','.02em');
+    } else {
+      const half=Math.ceil(surname.length/2);
+      s.append('text').text(surname.slice(0,half))
+        .attr('y',r+13).attr('font-size',(fs-1)+'px').attr('fill',lColor)
+        .attr('fill-opacity',lOpacity).attr('text-anchor','middle')
+        .attr('pointer-events','none').attr('font-weight','500');
+      s.append('text').text(surname.slice(half))
+        .attr('y',r+24).attr('font-size',(fs-1)+'px').attr('fill',lColor)
+        .attr('fill-opacity',lOpacity).attr('text-anchor','middle')
+        .attr('pointer-events','none').attr('font-weight','500');
+    }
+  });
+
+  // シミュレーション
+  if(!sim){
+    sim = d3.forceSimulation()
+      .force('charge', d3.forceManyBody().strength(d=>isObog(d)?-180:-420))
+      .force('collision', d3.forceCollide(d=>R(d)+32))
+      .on('tick', tick);
+  }
+  sim.nodes(visNodes)
+    .force('link', d3.forceLink(visEdges).id(d=>d.id).distance(d=>{
+      if(d.type==='hobby') return 200;
+      if(d.type==='dept'||d.type==='role'||d.type==='industry') return 180;
+      if(d.type==='jcgroup'||d.type==='birthmonth') return 190;
+      return 160;
+    }))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .alpha(.5).restart();
+
+  setTimeout(()=>visNodes.forEach(n=>{n.fx=null;n.fy=null;}),3500);
+  if(selectedId&&visSet.has(selectedId)) applyHighlight(selectedId);
+}
+
+// ================================================================
+// tick — 弧線パス更新
+// ================================================================
+function tick(){
+  if(linkSel){
+    linkSel.attr('d', d=>{
+      const sx=d.source.x, sy=d.source.y;
+      const tx=d.target.x, ty=d.target.y;
+      const dx=tx-sx, dy=ty-sy;
+      const dr=Math.sqrt(dx*dx+dy*dy)||1;
+      // 穏やかな円弧（半径=距離×2.5）
+      return `M${sx},${sy}A${dr*2.5},${dr*2.5} 0 0,1 ${tx},${ty}`;
+    });
+  }
+  if(nodeSel) nodeSel.attr('transform',d=>`translate(${d.x},${d.y})`);
+}
+
+// ================================================================
+// ハイライト
+// ================================================================
+function applyHighlight(id){
+  if(!nodeSel||!linkSel) return;
+  const connected=new Set([id]);
+  allEdges.forEach(e=>{
+    const s=typeof e.source==='object'?e.source.id:e.source;
+    const t=typeof e.target==='object'?e.target.id:e.target;
+    if(s===id) connected.add(t);
+    if(t===id) connected.add(s);
+  });
+  nodeSel.classed('faded',d=>!connected.has(d.id));
+  linkSel.classed('faded',e=>{
+    const s=typeof e.source==='object'?e.source.id:e.source;
+    const t=typeof e.target==='object'?e.target.id:e.target;
+    return s!==id&&t!==id;
+  });
+  // 選択ノードのグロー強調
+  nodeSel.select('circle.main-circle')
+    .attr('filter',d=>d.id===id?'url(#glow-sel)':'url(#glow)');
+  // アンビエント輪
+  nodeSel.select('circle.outer-glow')
+    .attr('opacity',d=>d.id===id?.12:0);
+}
+
+function clearHighlight(){
+  if(!nodeSel||!linkSel) return;
+  nodeSel.classed('faded',false);
+  linkSel.classed('faded',false);
+  nodeSel.select('circle.main-circle').attr('filter','url(#glow)');
+  nodeSel.select('circle.outer-glow').attr('opacity',0);
+}
+
+svg.on('click',()=>{ selectedId=null; clearHighlight(); closePanel(); });
+
+// ================================================================
+// 詳細パネル
+// ================================================================
+function selectNode(id){
+  selectedId=id;
+  applyHighlight(id);
+  renderDetail(id);
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function closePanel(){
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+function renderDetail(id){
+  const m=members.find(x=>x.id===id);
+  if(!m) return;
+
+  const color=cColor(m.committee);
+  let head=`<button id="btn-close" onclick="closePanel()">✕</button>`;
+  head+=`<div class="d-name">${m.name}</div>`;
+  if(m.committee) head+=`<div class="d-committee" style="background:${color}14;color:${color};border:1px solid ${color}28"><span style="width:5px;height:5px;border-radius:50%;background:${color};display:inline-block"></span>${m.committee}</div>`;
+  if(m.role) head+=`<div class="d-role">${m.role}</div>`;
+  if(m.industry) head+=`<div class="d-industry">📍 ${m.industry}</div>`;
+  if(m.joinYear){
+    head+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">`;
+    head+=`<span style="font-size:11px;color:#555">${m.joinYear}年入会</span>`;
+    if(m.jcGroup){
+      const nc={'1〜3年目':'#4dd0ff','4〜6年目':'#2edda8','7年以上':'#ffd166'}[m.jcGroup]||'#888';
+      head+=`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:${nc}18;color:${nc};border:1px solid ${nc}30"><span style="width:5px;height:5px;border-radius:50%;background:${nc};display:inline-block"></span>JC歴${m.jcNen}年目・${m.jcGroup}</span>`;
+    }
+    head+=`</div>`;
+  }
+  if(m.birthYear){
+    const bm = m.birthMonth ? `${m.birthMonth}月生まれ` : '';
+    head+=`<div style="font-size:11px;color:#444;margin-bottom:6px">🎂 ${m.birthYear}年生まれ${bm?' · '+bm:''}</div>`;
+  }
+  if(m.hobbies&&m.hobbies.length) head+=`<div class="hobby-tags">${m.hobbies.map(h=>`<span class="hobby-tag">🎯 ${h}</span>`).join('')}</div>`;
+  document.getElementById('detail-head').innerHTML=head;
+
+  const sid=e=>typeof e.source==='object'?e.source.id:e.source;
+  const tid=e=>typeof e.target==='object'?e.target.id:e.target;
+  const nl=mid=>{
+    const mb=members.find(x=>x.id===mid);
+    return mb?`<span class="clink" onclick="selectNode('${mid}')">${mb.name}</span>`:'';
+  };
+
+  const introBy = allEdges.filter(e=>tid(e)===id&&e.type==='intro');
+  const introTo = allEdges.filter(e=>sid(e)===id&&e.type==='intro');
+  const closeBy = allEdges.filter(e=>tid(e)===id&&e.type==='closing');
+  const closeTo = allEdges.filter(e=>sid(e)===id&&e.type==='closing');
+  const hobbyE  = allEdges.filter(e=>e.type==='hobby'&&(sid(e)===id||tid(e)===id));
+
+  let body='';
+
+  if(introBy.length||introTo.length){
+    body+=`<div class="d-section"><div class="d-section-title">紹介</div><ul class="rel-list">`;
+    if(introBy.length){
+      body+=`<li class="sub-label">紹介した人</li>`;
+      introBy.forEach(e=>{ body+=`<li><span class="badge badge-intro">紹介</span>${nl(sid(e))}</li>`; });
+    }
+    if(introTo.length){
+      body+=`<li class="sub-label">この人が紹介した人</li>`;
+      introTo.forEach(e=>{ body+=`<li><span class="badge badge-intro">紹介</span>${nl(tid(e))}</li>`; });
+    }
+    body+=`</ul></div>`;
+  }
+
+  if(closeBy.length||closeTo.length){
+    body+=`<div class="d-section"><div class="d-section-title">クロージング</div><ul class="rel-list">`;
+    if(closeBy.length){
+      body+=`<li class="sub-label">CLした人</li>`;
+      closeBy.forEach(e=>{ body+=`<li><span class="badge badge-cl">CL</span>${nl(sid(e))}</li>`; });
+    }
+    if(closeTo.length){
+      body+=`<li class="sub-label">この人がCLした人</li>`;
+      closeTo.forEach(e=>{ body+=`<li><span class="badge badge-cl">CL</span>${nl(tid(e))}</li>`; });
+    }
+    body+=`</ul></div>`;
+  }
+
+  if(hobbyE.length){
+    const hobbyMap={};
+    hobbyE.forEach(e=>{
+      const oid=sid(e)===id?tid(e):sid(e);
+      (e.label||'').split('・').forEach(hb=>{
+        if(hb){ if(!hobbyMap[hb])hobbyMap[hb]=[]; hobbyMap[hb].push(oid); }
+      });
+    });
+    body+=`<div class="d-section"><div class="d-section-title">趣味の繋がり</div>`;
+    Object.entries(hobbyMap).forEach(([hb,ids])=>{
+      body+=`<div class="hobby-group"><div class="hobby-group-header">${hb}</div>
+        <ul class="rel-list">${[...new Set(ids)].map(mid=>`<li><span class="badge badge-hobby">共通</span>${nl(mid)}</li>`).join('')}</ul></div>`;
+    });
+    body+=`</div>`;
+  }
+
+  if(!body) body=`<p class="empty">まだ関係が登録されていません</p>`;
+  document.getElementById('detail-body').innerHTML=body;
+}
+
+// ================================================================
+// データ読み込み
+// ================================================================
+// 経路（出欠アプリと同じ考え方）
+//   1) Apps Script 直配信: google.script.run
+//   2) 静的ホスティング（GitHub Pages・本番）: API_URL へ fetch（未ログイン扱いなので複数アカウント問題を受けない）
+//   3) ローカル確認: mock.js が window.MOCK を置く
+var API_URL = 'https://script.google.com/macros/s/AKfycbz8ZEnj29TUHXD64lFnraHwLE8RK91weRqb6Y4KJSEFqEkfH0M2qFgCNBhm23RkeiCI/exec';
+var HAS_GAS = (typeof google !== 'undefined') && google.script && google.script.run;
+var K_CACHE = 'jcdata';
+
+function fetchData(){
+  if(window.MOCK) return Promise.resolve(window.MOCK.getDataForClient());
+  if(HAS_GAS) return new Promise((res,rej)=>{
+    google.script.run.withSuccessHandler(res).withFailureHandler(rej).getDataForClient();
+  });
+  return fetch(API_URL+'?fn=getDataForClient',{credentials:'omit',redirect:'follow'})
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(b=>{ if(!b||!b.ok) throw new Error((b&&b.error)||'応答が不正'); return b.result; });
+}
+
+function loadData(){
+  document.getElementById('loading').classList.remove('hide');
+  document.getElementById('btn-refresh').disabled=true;
+  fetchData()
+    .then(data=>{
+      document.getElementById('loading').classList.add('hide');
+      document.getElementById('btn-refresh').disabled=false;
+      try{ localStorage.setItem(K_CACHE, JSON.stringify({t:Date.now(), data:data})); }catch(e){}
+      processData(data);
+    })
+    .catch(err=>{
+      document.getElementById('loading').classList.add('hide');
+      document.getElementById('btn-refresh').disabled=false;
+      // 取れなければ前回の結果（あれば）を出す
+      let cached=null;
+      try{ cached=JSON.parse(localStorage.getItem(K_CACHE)||'null'); }catch(e){}
+      if(cached&&cached.data&&!members.length){
+        processData(cached.data);
+        showToast('最新が取れません。表示は前回のもの（'+new Date(cached.t).toLocaleString('ja-JP')+'）');
+      } else {
+        showToast('読み込みエラー: '+(err&&err.message||String(err)));
+      }
+    });
+}
+
+function showToast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; },5000);
+}
+
+// ================================================================
+// ドロワー（モバイルメニュー）
+// ================================================================
+function toggleDrawer(){
+  const d=document.getElementById('drawer');
+  const o=document.getElementById('overlay');
+  const open=d.classList.toggle('open');
+  o.classList.toggle('show',open);
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+// ================================================================
+// ズーム操作
+// ================================================================
+function fitGraph(){
+  const b=g.node().getBBox();
+  if(!b.width||!b.height) return;
+  const pad=70;
+  const scale=Math.min((W-pad*2)/b.width,(H-pad*2)/b.height);
+  const tx=W/2-(b.x+b.width/2)*scale;
+  const ty=H/2-(b.y+b.height/2)*scale;
+  svg.transition().duration(600).call(zoom.transform,d3.zoomIdentity.translate(tx,ty).scale(scale));
+}
+
+function focusNode(node){
+  if(!node||node.x==null) return;
+  const scale=3;
+  const tx=W/2-node.x*scale;
+  const ty=H/2-node.y*scale;
+  svg.transition().duration(600).call(zoom.transform,d3.zoomIdentity.translate(tx,ty).scale(scale));
+}
+
+// ================================================================
+// イベント
+// ================================================================
+document.getElementById('btn-refresh').addEventListener('click',loadData);
+document.getElementById('btn-fit').addEventListener('click',fitGraph);
+document.getElementById('search-input').addEventListener('input',e=>{
+  searchQuery=e.target.value;
+  redraw();
+  const q=searchQuery.toLowerCase().trim();
+  if(q){
+    const matches=members.filter(m=>
+      m.name.toLowerCase().includes(q)&&!hiddenCommittees.has(m.committee||'その他')
+    );
+    if(matches.length===1){
+      setTimeout(()=>focusNode(matches[0]),700);
+    }
+  }
+});
+// ================================================================
+// モバイル判定
+// ----------------------------------------------------------------
+// ❌ window.innerWidth   → Apps Script outer page に viewport meta が
+//    ないため、モバイルでも iframe が ~980px でレンダリングされ 768 超えになる
+// ✅ screen.width        → ハードウェア画面幅（CSS px）をデバイスから直接
+//    取得するため iframe 幅に依存せず正確
+// ✅ userAgent 判定      → screen.width が取れない場合の保険
+// ================================================================
+function updateMobileClass(){
+  // ================================================================
+  // モバイルファースト設計: デフォルトはモバイル表示
+  // PCの場合のみ is-desktop クラスを付与してPC表示に切り替える
+  // → 検知が失敗してもスマホは必ずスマホ表示になる
+  // ================================================================
+  const sw = screen.width;
+  const ua = navigator.userAgent || '';
+  const isMobileUA = /iPhone|iPod|Android.*Mobile|Mobile.*Android|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const isMobile = sw <= 768 || isMobileUA;
+  // PCなら is-desktop を付与（デスクトップ用CSSが有効になる）
+  document.body.classList.toggle('is-desktop', !isMobile);
+
+}
+updateMobileClass();
+
+window.addEventListener('resize',()=>{
+  updateMobileClass();
+  getWH();
+  if(sim) sim.force('center',d3.forceCenter(W/2,H/2)).alpha(.1).restart();
+});
+
+// 1時間ごと自動更新
+setInterval(loadData, 3600000);
+
+getWH();
+loadData();
+</script>
+</body>
+</html>
